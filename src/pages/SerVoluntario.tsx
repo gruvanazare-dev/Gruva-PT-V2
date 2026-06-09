@@ -47,7 +47,7 @@ export default function SerVoluntario() {
               ❤️ Voluntariado
             </div>
             
-            <h1 className="text-3xl md:text-5xl font-bold font-sans text-primary-900 leading-tight mb-6">
+            <h1 className="text-3xl md:text-5xl font-bold  text-primary-900 leading-tight mb-6">
               Ser herói por um dia. <br />
               Ser voluntário para a vida.
             </h1>

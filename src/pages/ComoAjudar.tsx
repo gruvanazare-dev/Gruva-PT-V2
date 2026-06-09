@@ -31,7 +31,7 @@ export default function ComoAjudar() {
                   <div className="bg-blue-50 p-3 rounded-full text-blue-600 shrink-0">
                     <CreditCard size={24} />
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 font-mono tracking-wider uppercase">IBAN GRUVA</span>
+                  <span className="text-[10px] font-bold text-slate-400  tracking-wider uppercase">IBAN GRUVA</span>
                 </div>
                 <h3 className="text-xl font-bold text-primary-900 mb-2">Transferência Bancária</h3>
                 <p className="text-slate-500 text-sm mb-6 leading-relaxed">

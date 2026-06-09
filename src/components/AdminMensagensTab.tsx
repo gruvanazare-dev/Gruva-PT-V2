@@ -17,6 +17,10 @@ export default function AdminMensagensTab({ mensagens, onRefresh }: AdminMensage
   const [selectedMessage, setSelectedMessage] = useState<Mensagem | null>(null);
   const [activePhotoUrl, setActivePhotoUrl] = useState<string | null>(null);
 
+  // Custom delete state to avoid standard window.confirm blocks
+  const [msgToDelete, setMsgToDelete] = useState<{ id: string; nome: string } | null>(null);
+  const [isDeletingMsg, setIsDeletingMsg] = useState(false);
+
   const handleToggleLida = async (msgId: string, status: boolean) => {
     try {
       await dataService.updateMensagem(msgId, { lida: status });
@@ -49,16 +53,7 @@ export default function AdminMensagensTab({ mensagens, onRefresh }: AdminMensage
   };
 
   const handleDeleteMessage = async (id: string, name: string) => {
-    const confirmed = window.confirm(`Tens a certeza que pretendes eliminar a mensagem de "${name}"?`);
-    if (confirmed) {
-      try {
-        await dataService.deleteMensagem(id);
-        setSelectedMessage(null);
-        onRefresh();
-      } catch (err) {
-        console.error('Erro ao eliminar mensagem:', err);
-      }
-    }
+    setMsgToDelete({ id, nome: name });
   };
 
   // Local filter
@@ -90,7 +85,7 @@ export default function AdminMensagensTab({ mensagens, onRefresh }: AdminMensage
         {/* Filter controls */}
         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 font-sans uppercase tracking-widest pl-1 mb-1.5">Filtrar Assunto</label>
+            <label className="block text-[10px] font-bold text-slate-400  uppercase tracking-widest pl-1 mb-1.5">Filtrar Assunto</label>
             <select
               value={msgFilterAssunto}
               onChange={(e) => setMsgFilterAssunto(e.target.value)}
@@ -163,7 +158,7 @@ export default function AdminMensagensTab({ mensagens, onRefresh }: AdminMensage
                 
                 <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold mt-2.5">
                   <span>{msg.created_at ? new Date(msg.created_at).toLocaleDateString('pt-PT') : 'N/A'}</span>
-                  <span className="font-mono text-slate-350">ID: {msg.id.substring(0, 5)}...</span>
+                  <span className=" text-slate-350">ID: {msg.id.substring(0, 5)}...</span>
                 </div>
               </div>
             ))
@@ -314,6 +309,55 @@ export default function AdminMensagensTab({ mensagens, onRefresh }: AdminMensage
             </div>
             <div className="p-4 text-center">
               <p className="text-xs text-slate-500 font-semibold font-sans">Anexo enviado pelo utilizador</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Message Deletion */}
+      {msgToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 flex flex-col items-center text-center space-y-4 animate-scale-in">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+              <AlertCircle size={24} />
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-slate-800">Eliminar Mensagem?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Tens a certeza que pretendes eliminar permanentemente a mensagem de <strong className="text-slate-800">"{msgToDelete.nome}"</strong>? Esta ação é irreversível.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 w-full pt-1">
+              <button
+                type="button"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-all"
+                onClick={() => setMsgToDelete(null)}
+                disabled={isDeletingMsg}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                disabled={isDeletingMsg}
+                onClick={async () => {
+                  setIsDeletingMsg(true);
+                  try {
+                    await dataService.deleteMensagem(msgToDelete.id);
+                    setSelectedMessage(null);
+                    onRefresh();
+                  } catch (err) {
+                    console.error('Erro ao eliminar mensagem:', err);
+                  } finally {
+                    setIsDeletingMsg(false);
+                    setMsgToDelete(null);
+                  }
+                }}
+              >
+                {isDeletingMsg ? 'A eliminar...' : 'Confirmar'}
+              </button>
             </div>
           </div>
         </div>

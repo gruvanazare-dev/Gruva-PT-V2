@@ -502,7 +502,7 @@ export default function Contactos() {
                                 <p className="text-xs font-bold text-slate-700 truncate" title={foto.name}>
                                   {foto.name}
                                 </p>
-                                <p className="text-[10px] font-mono text-emerald-600 font-bold mt-0.5">
+                                <p className="text-[10px]  text-emerald-600 font-bold mt-0.5">
                                   {formatSize(foto.size)}
                                 </p>
                               </div>

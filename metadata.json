@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "GRUVA - Canil de Nazaré",
+  "description": "Plataforma voluntária para apadrinhamento individual e adoção de animais abandonados no Canil Municipal da Nazaré.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

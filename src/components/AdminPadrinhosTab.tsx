@@ -42,6 +42,14 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
     data_fim: ''
   });
   const [formError, setFormError] = useState('');
+  
+  // Custom delete state to avoid standard window.confirm blocks
+  const [padrinhoToDelete, setPadrinhoToDelete] = useState<{ id: string; nome: string } | null>(null);
+  const [isDeletingPadrinho, setIsDeletingPadrinho] = useState(false);
+
+  // Custom approve state to avoid standard window.confirm blocks
+  const [padrinhoToApprove, setPadrinhoToApprove] = useState<Padrinho | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
 
   const handleOpenNew = () => {
     setForm({
@@ -113,16 +121,7 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
   };
 
   const handleDelete = async (id: string, name: string) => {
-    const confirmed = window.confirm(`Tens a certeza que desejas eliminar permanentemente o padrinho/madrinha "${name}" do sistema?`);
-    if (confirmed) {
-      try {
-        await dataService.deletePadrinho(id);
-        onRefresh();
-      } catch (err) {
-        console.error('Erro ao eliminar padrinho:', err);
-        alert('Erro ao eliminar padrinho.');
-      }
-    }
+    setPadrinhoToDelete({ id, nome: name });
   };
 
   // Helper to get animal details
@@ -203,7 +202,7 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
                   placeholder="Pesquisar por nome, email ou telefone..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-white text-slate-800 border border-slate-205 text-xs px-4 py-2.5 rounded-full w-full focus:outline-none focus:ring-2 focus:ring-primary-400 font-sans shadow-sm"
+                  className="bg-white text-slate-800 border border-slate-205 text-xs px-4 py-2.5 rounded-full w-full focus:outline-none focus:ring-2 focus:ring-primary-400  shadow-sm"
                 />
                 <button
                   type="button"
@@ -369,7 +368,7 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
                                 <h4 className="font-extrabold text-slate-800 text-sm">{p.nome}</h4>
                                 <Heart size={14} className="fill-red-400 text-red-400 shrink-0" />
                               </div>
-                              <div className="space-y-0.5 mt-1 font-mono text-[10.5px] text-slate-500">
+                              <div className="space-y-0.5 mt-1  text-[10.5px] text-slate-500">
                                 <p className="flex items-center gap-1">
                                   <Mail size={12} className="text-slate-400" />
                                   <span>{p.email}</span>
@@ -448,17 +447,7 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
                             <div className="flex justify-end gap-1.5 align-middle items-center">
                               {p.estado.toLowerCase() === 'pendente' && (
                                 <button
-                                  onClick={async () => {
-                                    if (window.confirm(`Tens a certeza que desejas aprovar e ativar o apadrinhamento de "${p.nome}"?`)) {
-                                      try {
-                                        await dataService.updatePadrinho(p.id, { estado: 'Ativo' });
-                                        onRefresh();
-                                      } catch (err) {
-                                        console.error(err);
-                                        alert('Erro ao ativar apadrinhamento.');
-                                      }
-                                    }
-                                  }}
+                                  onClick={() => setPadrinhoToApprove(p)}
                                   className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 p-2 rounded-xl transition-all"
                                   title="Aprovar e Ativar Apadrinhamento"
                                 >
@@ -578,17 +567,7 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
                       <div className="flex items-center justify-end border-t border-slate-150/40 pt-3 mt-4 gap-1.5">
                         {p.estado.toLowerCase() === 'pendente' && (
                           <button
-                            onClick={async () => {
-                              if (window.confirm(`Tens a certeza que desejas aprovar e ativar o apadrinhamento de "${p.nome}"?`)) {
-                                try {
-                                  await dataService.updatePadrinho(p.id, { estado: 'Ativo' });
-                                  onRefresh();
-                                } catch (err) {
-                                  console.error(err);
-                                  alert('Erro ao ativar apadrinhamento.');
-                                }
-                              }
-                            }}
+                            onClick={() => setPadrinhoToApprove(p)}
                             className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all font-bold text-xs flex items-center gap-1 shadow-sm"
                             title="Aprovar e Ativar"
                           >
@@ -1020,10 +999,21 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
               <div className="pt-4 border-t border-slate-100">
                 <div className="bg-[#fbfcff] border border-blue-100 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Assinatura Eletrónica:</p>
-                    <span className="font-serif italic text-lg text-blue-900 tracking-wide select-all">
-                      {selectedFicha.assinatura_digital || selectedFicha.nome}
-                    </span>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Assinatura Eletrónica / Desenho:</p>
+                    {selectedFicha.assinatura_digital && selectedFicha.assinatura_digital.startsWith('data:image/') ? (
+                      <div className="mt-2 bg-white border border-slate-200 rounded-xl p-2 max-w-[280px]">
+                        <img 
+                          src={selectedFicha.assinatura_digital} 
+                          alt="Assinatura Desenhada" 
+                          className="max-h-16 object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    ) : (
+                      <span className=" italic text-lg text-blue-900 tracking-wide select-all">
+                        {selectedFicha.assinatura_digital || selectedFicha.nome}
+                      </span>
+                    )}
                   </div>
                   <div className="text-right text-[10px] text-slate-400">
                     <p>Submetida eletronicamente</p>
@@ -1054,17 +1044,9 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
               <div className="flex gap-2">
                 {selectedFicha.estado.toLowerCase() === 'pendente' && (
                   <button
-                    onClick={async () => {
-                      if (window.confirm(`Tens a certeza que desejas aprovar e ativar o apadrinhamento de "${selectedFicha.nome}"?`)) {
-                        try {
-                          await dataService.updatePadrinho(selectedFicha.id, { estado: 'Ativo' });
-                          setSelectedFicha(null);
-                          onRefresh();
-                        } catch (err) {
-                          console.error(err);
-                          alert('Erro ao ativar apadrinhamento.');
-                        }
-                      }
+                    onClick={() => {
+                      setPadrinhoToApprove(selectedFicha);
+                      setSelectedFicha(null);
                     }}
                     className="bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold px-6 py-2.5 rounded-full text-xs shadow-md flex items-center gap-1.5"
                   >
@@ -1089,6 +1071,103 @@ export default function AdminPadrinhosTab({ padrinhos, animais, onRefresh }: Adm
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation Modal for Padrinho/Madrinha Deletion */}
+      {padrinhoToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 flex flex-col items-center text-center space-y-4 animate-scale-in">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+              <AlertTriangle size={24} />
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-slate-800">Eliminar Apadrinhamento?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Tens a certeza que pretendes eliminar permanentemente o padrinho/madrinha do sistema: <strong className="text-slate-800">"{padrinhoToDelete.nome}"</strong>? Esta ação é irreversível.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 w-full pt-1">
+              <button
+                type="button"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-all"
+                onClick={() => setPadrinhoToDelete(null)}
+                disabled={isDeletingPadrinho}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                disabled={isDeletingPadrinho}
+                onClick={async () => {
+                  setIsDeletingPadrinho(true);
+                  try {
+                    await dataService.deletePadrinho(padrinhoToDelete.id);
+                    onRefresh();
+                  } catch (err) {
+                    console.error('Erro ao eliminar padrinho:', err);
+                  } finally {
+                    setIsDeletingPadrinho(false);
+                    setPadrinhoToDelete(null);
+                  }
+                }}
+              >
+                {isDeletingPadrinho ? 'A eliminar...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Padrinho Approval */}
+      {padrinhoToApprove && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 flex flex-col items-center text-center space-y-4 animate-scale-in">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+              <Check size={24} />
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-slate-800">Aprovar Apadrinhamento?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Tens a certeza que desejas aprovar e ativar o apadrinhamento de <strong className="text-slate-800">"{padrinhoToApprove.nome}"</strong>?
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 w-full pt-1">
+              <button
+                type="button"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-all"
+                onClick={() => setPadrinhoToApprove(null)}
+                disabled={isApproving}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                disabled={isApproving}
+                onClick={async () => {
+                  setIsApproving(true);
+                  try {
+                    await dataService.updatePadrinho(padrinhoToApprove.id, { estado: 'Ativo' });
+                    onRefresh();
+                  } catch (err) {
+                    console.error('Erro ao ativar apadrinhamento:', err);
+                  } finally {
+                    setIsApproving(false);
+                    setPadrinhoToApprove(null);
+                  }
+                }}
+              >
+                {isApproving ? 'A ativar...' : 'Aprovar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

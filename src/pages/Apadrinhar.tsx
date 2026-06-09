@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Heart, PawPrint, Calendar, User, MapPin, 
   CreditCard, Phone, Mail, FileText, CheckCircle2, 
-  ArrowLeft, Check, Compass, ShieldAlert, Sparkles, LogIn
+  ArrowLeft, Check, Compass, ShieldAlert, Sparkles, LogIn,
+  Edit2, Eraser, ChevronLeft, ChevronRight, ShieldCheck, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { dataService, Animal } from '../lib/dataService';
@@ -48,7 +49,7 @@ export default function Apadrinhar() {
     autoriza_email: true,
 
     // Valores
-    valor_opcao: '10', // '10', '15', '20', '25', 'outro'
+    valor_opcao: '', // '', '10', '15', '20', '25', 'outro'
     valor_outro: '',
     
     // Contribuições adicionais (Checkboxes)
@@ -66,6 +67,111 @@ export default function Apadrinhar() {
     assinatura_digital: '',
     aceitou_termos: false
   });
+
+  // Signature customization states
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [isCanvasDrawingEmpty, setIsCanvasDrawingEmpty] = useState(true);
+
+  // Drawing event coordinate calculator
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    
+    let clientX = 0;
+    let clientY = 0;
+    
+    if ('touches' in e) {
+      if (e.touches.length === 0) return null;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (e.cancelable) e.preventDefault();
+
+    const coords = getCoordinates(e);
+    if (!coords) return;
+
+    ctx.beginPath();
+    ctx.moveTo(coords.x, coords.y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (e.cancelable) e.preventDefault();
+
+    const coords = getCoordinates(e);
+    if (!coords) return;
+
+    ctx.lineTo(coords.x, coords.y);
+    ctx.stroke();
+    setIsCanvasDrawingEmpty(false);
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    saveCanvasSignature();
+  };
+
+  const saveCanvasSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || isCanvasDrawingEmpty) return;
+    const dataUrl = canvas.toDataURL('image/png');
+    setForm(f => ({ ...f, assinatura_digital: dataUrl }));
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setIsCanvasDrawingEmpty(true);
+    setForm(f => ({ ...f, assinatura_digital: '' }));
+  };
+
+
+
+  // Adjust canvas size on mount and on orientation shift
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight || 180;
+
+    // Premium styling options for ink drawing
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#005b7f'; // Beautiful teal-blue ink matching GRUVA branding
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }, [canvasRef.current]);
 
   // Fetch pets list
   useEffect(() => {
@@ -94,6 +200,30 @@ export default function Apadrinhar() {
     fetchPets();
   }, [animalIdFromUrl, animalNameFromUrl]);
 
+  // Prevent accidental navigation
+  useEffect(() => {
+    if (isSubmitted) return;
+    
+    // Check if form has been partially filled out
+    const isEditing = 
+      form.nome.trim() !== '' || 
+      form.email.trim() !== '' || 
+      form.telefone.trim() !== '' || 
+      form.nif.trim() !== '';
+
+    if (!isEditing) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ''; // Standard behavior for modern browsers to show a warning
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [form, isSubmitted]);
+
   // Handle Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,27 +231,27 @@ export default function Apadrinhar() {
 
     // Pre-validations
     if (!form.animal_id) {
-      setFormError('Por favor, seleciona um patudo para apadrinhar.');
+      setFormError('Por favor, seleciona um patudo da lista para apadrinhar.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (!form.nome || !form.sobrenome) {
-      setFormError('Por favor, preenche o teu Nome e Sobrenome.');
+    if (!form.data_inicio) {
+      setFormError('Por favor, indica a data de início do apadrinhamento.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (!form.email || !form.telefone) {
-      setFormError('Por favor, indica um email e contacto telefónico válidos.');
-      return;
-    }
-    if (!form.nif || !form.cartao_cidadao) {
-      setFormError('É necessário informar o NIF e o Cartão de Cidadão para validar a ficha oficial.');
+    if (!form.nome.trim() || !form.sobrenome.trim()) {
+      setFormError('Por favor, preenche o teu Primeiro Nome e Sobrenome completo.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!form.data_nascimento) {
-      setFormError('Por favor, insere a tua data de nascimento.');
+      setFormError('Por favor, preenche a tua Data de Nascimento.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     
-    // Check age (Optional guidance: must be 18, if under responsibility is parent's)
+    // Check age (at least 18)
     const birthDate = new Date(form.data_nascimento);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
@@ -129,30 +259,68 @@ export default function Apadrinhar() {
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
       age--;
     }
-    
     if (age < 18) {
       setFormError('O padrinho ou madrinha deve ter mais de 18 anos. Caso sejas menor, por favor, preenche os dados em nome de um encarregado de educação ou progenitor.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    if (!form.assinatura_digital) {
-      setFormError('Deves introduzir a tua assinatura digital (escrever o teu nome) para validar a ficha.');
+    if (!form.nif || form.nif.trim().length !== 9 || !/^\d{9}$/.test(form.nif.trim())) {
+      setFormError('O NIF (Número de Identificação Fiscal) é obrigatório e deve ter exatamente 9 algarismos.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.cartao_cidadao.trim()) {
+      setFormError('O Número de Cartão de Cidadão é obrigatório para o registo oficial.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.endereco.trim()) {
+      setFormError('Por favor, preenche o teu endereço de residência.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.localidade.trim()) {
+      setFormError('Por favor, indica a tua localidade.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.codigo_postal.trim()) {
+      setFormError('Por favor, indica o teu Código Postal.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.telefone.trim()) {
+      setFormError('Indica um contacto telefónico de Telemóvel válido.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email)) {
+      setFormError('Por favor, introduz um formato de E-mail de contacto válido.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const finalValor = form.valor_opcao === 'outro' ? parseFloat(form.valor_outro) : parseFloat(form.valor_opcao);
+    if (isNaN(finalValor) || finalValor < 10) {
+      setFormError('O valor mensal de contribuição do apadrinhamento tem de ser no mínimo de 10,00 €.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (isCanvasDrawingEmpty || !form.assinatura_digital.startsWith('data:image/')) {
+      setFormError('Por favor, desenha e assina a tua assinatura digital no quadro correspondente.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!form.aceitou_termos) {
-      setFormError('É necessário aceitar os termos e responsabilidades do apadrinhamento.');
+      setFormError('É de aceitação obrigatória sob compromisso de honra os termos do apadrinhamento.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     setSubmitting(true);
     try {
-      const finalValor = form.valor_opcao === 'outro' ? parseFloat(form.valor_outro) : parseFloat(form.valor_opcao);
-      if (isNaN(finalValor) || finalValor < 10) {
-        setFormError('O valor mensal mínimo de contribuição do apadrinhamento é de 10,00 €.');
-        setSubmitting(false);
-        return;
-      }
-
       // Calculate final target end-date if not indefinite
       let finalEndDate = '';
       if (form.periodo === '3 Meses') {
@@ -181,7 +349,7 @@ export default function Apadrinhar() {
         data_inicio: form.data_inicio,
         estado: 'Pendente', // Inicia Pendente para o Administrador validar conforme PDF
         periodicidade: form.periodicidade,
-        observacoes: `Endereço: ${form.endereco}, ${form.endereco_cont} - ${form.codigo_postal} ${form.localidade}, ${form.pais}. NIF: ${form.nif}, CC: ${form.cartao_cidadao}. Data Nasc: ${form.data_nascimento}`,
+        observacoes: `Morada: ${form.endereco}, ${form.endereco_cont} - ${form.codigo_postal} ${form.localidade}, ${form.pais}. NIF: ${form.nif}, CC: ${form.cartao_cidadao}. Data Nasc: ${form.data_nascimento}`,
         periodo: form.periodo,
         data_fim: finalEndDate,
         
@@ -217,6 +385,22 @@ export default function Apadrinhar() {
 
   const selectedAnimalObj = animais.find(a => a.id === form.animal_id);
 
+  // Check completion states for collapsing logic
+  const isStep1Done = !!(form.animal_id && form.data_inicio);
+  
+  // To keep it simple, we ask the user to fill out the most critical fields of step 2 to unlock step 3
+  const isStep2Done = isStep1Done && !!(form.nome.trim() && form.sobrenome.trim() && form.nif.trim() && form.cartao_cidadao.trim() && form.endereco.trim() && form.localidade.trim() && form.codigo_postal.trim() && form.telefone.trim() && form.email.trim());
+
+  let isStep3Done = false;
+  if (isStep2Done && form.valor_opcao !== '') {
+    if (form.valor_opcao === 'outro') {
+      const v = parseFloat(form.valor_outro);
+      if (!isNaN(v) && v >= 10) isStep3Done = true;
+    } else {
+      isStep3Done = true;
+    }
+  }
+
   if (isSubmitted) {
     return (
       <div className="w-full bg-slate-50 py-16 lg:py-24 min-h-screen flex items-center justify-center">
@@ -242,7 +426,7 @@ export default function Apadrinhar() {
               <p className="leading-relaxed">
                 1. <strong>Pagamento da primeira mensalidade ({form.valor_opcao === 'outro' ? form.valor_outro : form.valor_opcao}€)</strong>: Efetua o envio através de:
               </p>
-              <div className="bg-white/80 rounded-xl p-3.5 space-y-1 text-slate-700 font-mono text-[11px] border border-amber-200/40">
+              <div className="bg-white/80 rounded-xl p-3.5 space-y-1 text-slate-700  text-[11px] border border-amber-200/40">
                 <p>🚀 <strong>MBWay</strong>: <span className="font-bold">968 537 272</span></p>
                 <p>🏦 <strong>IBAN</strong>: <span className="font-bold select-all">PT50 0045 5020 4034 5236 0979 4</span></p>
               </div>
@@ -269,8 +453,8 @@ export default function Apadrinhar() {
   }
 
   return (
-    <div className="w-full bg-slate-50 py-16 lg:py-24">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
+    <div className="w-full bg-slate-50/60 py-10 lg:py-16">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
         
         {/* Return Button */}
         <div className="mb-6">
@@ -280,579 +464,638 @@ export default function Apadrinhar() {
         </div>
 
         {/* Banner Card Header */}
-        <div className="bg-gradient-to-r from-primary-800 to-primary-900 rounded-[2.5rem] p-8 sm:p-12 text-white relative overflow-hidden mb-10 shadow-lg border border-primary-950/20">
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 bg-white/10 w-64 h-64 rounded-full blur-2xl"></div>
-          <div className="absolute bottom-0 left-0 -ml-16 -mb-16 bg-pink-500/10 w-64 h-64 rounded-full blur-2xl animate-pulse"></div>
+        <div className="bg-gradient-to-r from-[#033649] to-[#0a4d68] rounded-[2rem] p-8 sm:p-10 text-white relative overflow-hidden mb-8 shadow-md border border-slate-950/20">
+          <div className="absolute top-0 right-0 -mr-16 -mt-16 bg-white/5 w-64 h-64 rounded-full blur-2xl"></div>
+          <div className="absolute bottom-0 left-0 -ml-16 -mb-16 bg-pink-500/10 w-64 h-64 rounded-full blur-2xl"></div>
 
           <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-white/15 p-2 rounded-2xl text-accent-300">
-                <Heart size={28} className="fill-accent-300/20" />
+            <div className="flex items-center gap-3 mb-3">
+              <div className="bg-white/10 p-2 rounded-xl text-accent-300">
+                <Heart size={20} className="fill-accent-a33 text-pink-400" />
               </div>
-              <span className="text-xs font-black tracking-widest uppercase text-primary-205 font-mono">Nazaré Recinto</span>
+              <span className="text-[10px] font-black tracking-widest uppercase text-slate-250 font-mono">Apadrinhamento Individual</span>
             </div>
             
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-tight mb-3">Ficha de Apadrinhamento Individual</h1>
-            <p className="text-primary-100 text-sm max-w-2xl leading-relaxed">
-              Apadrinhar um animal residente na Nazaré é dar-lhe uma oportunidade estável de sobrevivência, cuidados médicos continuados e mimos na ausência de uma adoção imediata. 
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight mb-2">Ficha de Apadrinhamento</h1>
+            <p className="text-slate-200 text-xs sm:text-sm max-w-2xl leading-relaxed opacity-90">
+              Ao tornares-te padrinho ou madrinha, garantes sustento e assistência médica contínua ao patudo da tua escolha. Completa esta ficha em poucos minutos.
             </p>
           </div>
         </div>
 
+        {/* FORM STATUS OVERVIEW */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 mb-8 shadow-sm">
+          <div className="grid grid-cols-4 gap-2 text-center max-w-3xl mx-auto">
+            {[
+              { num: 1, label: 'Afilhado', icon: PawPrint, done: !!form.animal_id },
+              { num: 2, label: 'Dados Pessoais', icon: User, done: !!(form.nome && form.sobrenome && form.email && form.telefone && form.nif) },
+              { num: 3, label: 'Mensalidade', icon: CreditCard, done: true },
+              { num: 4, label: 'Assinatura', icon: FileText, done: !!form.assinatura_digital }
+            ].map(s => {
+              const IconComp = s.icon;
+              return (
+                <div key={s.num} className="flex flex-col items-center gap-1.5">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                    s.done 
+                      ? 'bg-emerald-500 text-white' 
+                      : 'bg-[#0a4d68]/10 text-[#0a4d68]'
+                  }`}>
+                    {s.done ? <Check size={16} className="stroke-[3]" /> : <IconComp size={15} />}
+                  </div>
+                  <span className={`text-[10px] sm:text-xs font-bold ${
+                    s.done ? 'text-emerald-600' : 'text-[#0a4d68]'
+                  }`}>
+                    {s.num}. {s.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Layout Container */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="max-w-4xl mx-auto">
           
-          {/* Main Form Fields (2 cols) */}
-          <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-8">
+          {/* Main Unified Form Content */}
+          <div className="space-y-6">
+
+            {/* INFORMATIVE TEXT */}
+            <div className="bg-[#fbfcff] rounded-2xl border border-blue-100 p-6 sm:p-8 shadow-sm">
+              <h2 className="text-xl font-black text-[#0a4d68] mb-4">O que significa APADRINHAR?</h2>
+              <div className="space-y-4 text-sm text-slate-700 leading-relaxed font-medium">
+                <p>
+                  Apadrinhar é um ato de solidariedade que está ao alcance de todos os que querem ajudar/apoiar os animais de ninguém. Ao ser padrinho ou madrinha está a criar um vínculo com o animal e a ajudar-nos a melhorar a sua vida. Qualquer pessoa pode apadrinhar um ou mais animais. Mesmo com padrinho ou madrinha, continuarão para adoção responsável e, caso sejam adotados, poderão sempre escolher outro(s) para apadrinhar.
+                </p>
+                
+                <div>
+                  <h3 className="font-bold text-slate-900 mb-1">Não pode ser padrinho ou madrinha:</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Caso tenha menos de 18 anos (neste caso um dos progenitores terá que ficar como responsável).</li>
+                  </ul>
+                </div>
+
+                <div>
+                  <h3 className="font-bold text-slate-900 mb-1">O cidadão pode deixar de apadrinhar um animal:</h3>
+                  <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                    <li>Caso o padrinho ou madrinha não exerça qualquer função num prazo de 3 meses o vínculo será extinto (salvo em casos devidamente identificados);</li>
+                    <li>Caso o padrinho ou madrinha, através de comunicação por email ou carta escrita, expresse a vontade de deixar de ter esse estatuto.</li>
+                  </ul>
+                </div>
+
+                <div className="pt-2">
+                  <h3 className="font-bold text-slate-900 mb-2 uppercase text-xs tracking-wider">Muito importante:</h3>
+                  <ol className="list-decimal pl-5 space-y-2 text-slate-600">
+                    <li>O apadrinhamento de um animal assenta na responsabilidade de promover o bem-estar do mesmo com uma contribuição mensal obrigatória de 10€.</li>
+                    <li>Todos os animais continuam para adoção mesmo tendo um padrinho ou madrinha.</li>
+                    <li>Findo o período de apadrinhamento o padrinho ou madrinha será contatado pela Associação para uma possível renovação do mesmo.</li>
+                    <li>A Associação, na qualidade de responsável pelo tratamento dos dados pessoais no âmbito da relação agora estabelecida, procederá à sua conservação apenas durante o período em que durar o apadrinhamento e 2 anos após o fim da relação vigente.</li>
+                    <li>O Padrinho ou Madrinha declara expressamente que foi informado, antes de assinar este documento, que os seus dados pessoais só serão usados de forma interna e para o parabenizar e/ou informar de situações que digam única e exclusivamente respeito à relação que tem agora com a Associação.</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
             
             {formError && (
-              <div className="bg-rose-50 border border-rose-100 text-rose-700 p-5 rounded-2xl text-xs font-bold flex gap-3 shadow-sm">
-                <ShieldAlert size={18} className="shrink-0 text-rose-500" />
+              <div className="bg-rose-50 border border-rose-100 text-rose-700 p-4 rounded-xl text-xs font-bold flex gap-3 shadow-sm">
+                <ShieldAlert size={16} className="shrink-0 text-rose-500 mt-0.5" />
                 <span>{formError}</span>
               </div>
             )}
 
-            {/* SEÇÃO 1: Escolha do Afilhado */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-6 sm:p-8 shadow-sm">
-              <h2 className="text-lg font-black text-slate-800 flex items-center gap-2.5 mb-6 border-b border-slate-100 pb-3">
-                <PawPrint size={18} className="text-pink-500" />
-                <span>1. Escolha do Afilhado</span>
-              </h2>
+            {/* WARNING ABOUT DATA LOSS */}
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl text-[11.5px] font-medium flex gap-3 shadow-sm">
+              <ShieldAlert size={18} className="shrink-0 text-amber-500" />
+              <span>Aviso: Ao sair da página do formulário de apadrinhamento, os dados já inseridos serão apagados. Por favor, conclua o preenchimento antes de navegar para outras secções.</span>
+            </div>
 
-              <div className="space-y-5">
+            <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-100 p-6 sm:p-8 shadow-sm space-y-8">
+              
+              {/* SECTION 1: ESCOLHA DO AFILHADO */}
+              <div className="space-y-5 pb-6 border-b border-slate-100">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Selecione o Animal *</label>
-                  {loading ? (
-                    <div className="py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-400">A carregar patudos...</div>
-                  ) : (
-                    <select
-                      value={form.animal_id}
-                      onChange={e => setForm({ ...form, animal_id: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3.5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
-                      required
-                    >
-                      <option value="">-- Escolhe um patudo da GRUVA --</option>
-                      {animais.map(a => (
-                        <option key={a.id} value={a.id}>{a.nome} ({a.especie} - {a.idade_aprox})</option>
-                      ))}
-                    </select>
-                  )}
-                  <span className="text-[10px] text-slate-400 block mt-1.5 pl-1">Se não encontrares o animal pretendido, por favor indica-nos.</span>
+                  <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2 mb-1.5">
+                    <PawPrint size={18} className="text-pink-500" />
+                    <span>1. Escolha do Afilhado</span>
+                  </h2>
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    Selecione o patudo que deseja apadrinhar e a data de início da sua contribuição mensal de suporte.
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Início do Apadrinhamento</label>
-                    <div className="relative">
-                      <Calendar size={14} className="absolute left-4 top-3.5 text-slate-400" />
-                      <input
-                        type="date"
-                        value={form.data_inicio}
-                        onChange={e => setForm({ ...form, data_inicio: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 pl-11 pr-4 py-3 rounded-2xl focus:outline-none"
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">Selecione o Patudo na lista *</label>
+                    {loading ? (
+                      <div className="py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-400">A carregar patudos...</div>
+                    ) : (
+                      <select
+                        value={form.animal_id}
+                        onChange={e => setForm({ ...form, animal_id: e.target.value })}
+                        className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none focus:ring-2 font-medium cursor-pointer ${!form.animal_id ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500 focus:ring-blue-105'}`}
                         required
-                      />
-                    </div>
+                      >
+                        <option value="">-- Escolhe um patudo da GRUVA --</option>
+                        {animais.map(a => (
+                          <option key={a.id} value={a.id}>{a.nome} ({a.especie} - {a.idade_aprox})</option>
+                        ))}
+                      </select>
+                    )}
+                    <span className="text-[9.5px] text-slate-400 block mt-1 pl-1 leading-normal">
+                      Se o animal pretendido não estiver na lista ou necessitares de ajuda, contacta o nosso abrigo.
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Período Contratado</label>
-                    <select
-                      value={form.periodo}
-                      onChange={e => setForm({ ...form, periodo: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                    >
-                      <option value="3 Meses">3 Meses</option>
-                      <option value="6 Meses">6 Meses</option>
-                      <option value="12 Meses">12 Meses</option>
-                      <option value="Até ser adotado">Até ser adotado (Indeterminado)</option>
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">Início do Apadrinhamento *</label>
+                      <div className="relative">
+                        <Calendar size={13} className="absolute left-4 top-3.5 text-slate-400" />
+                        <input
+                          type="date"
+                          value={form.data_inicio}
+                          onChange={e => setForm({ ...form, data_inicio: e.target.value })}
+                          className={`w-full bg-[#f8fafc] text-xs text-slate-800 pl-11 pr-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.data_inicio ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1 ">Período de Apoio *</label>
+                      <select
+                        value={form.periodo}
+                        onChange={e => setForm({ ...form, periodo: e.target.value })}
+                        className="w-full bg-[#f8fafc] border border-slate-200 text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none font-medium"
+                      >
+                        <option value="3 Meses">3 Meses</option>
+                        <option value="6 Meses">6 Meses</option>
+                        <option value="12 Meses">12 Meses</option>
+                        <option value="Até ser adotado">Até ser adotado (Indeterminado)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* SEÇÃO 2: Dados Pessoais */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-6 sm:p-8 shadow-sm">
-              <h2 className="text-lg font-black text-slate-800 flex items-center gap-2.5 mb-6 border-b border-slate-100 pb-3">
-                <User size={18} className="text-blue-500" />
-                <span>2. Dados Pessoais do Padrinho / Madrinha</span>
-              </h2>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* SECTION 2: DADOS PESSOAIS */}
+              <div className={`space-y-5 pb-6 border-b border-slate-100 transition-opacity duration-300 ${isStep1Done ? '' : 'opacity-40 pointer-events-none'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nome *</label>
-                    <input
-                      type="text"
-                      value={form.nome}
-                      onChange={e => setForm({ ...form, nome: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      placeholder="Primeiro"
-                      required
-                    />
+                    <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2 mb-1.5">
+                      <User size={18} className={isStep1Done ? "text-blue-500" : "text-slate-400"} />
+                      <span>2. Dados do Padrinho ou Madrinha</span>
+                    </h2>
+                    <p className="text-[11px] text-slate-400 leading-normal">
+                      Informa os dados necessários para que possamos emitir o respetivo certificado oficial de apadrinhamento.
+                    </p>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nome do Meio</label>
-                    <input
-                      type="text"
-                      value={form.nome_meio}
-                      onChange={e => setForm({ ...form, nome_meio: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      placeholder="Se aplicável"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Sobrenome *</label>
-                    <input
-                      type="text"
-                      value={form.sobrenome}
-                      onChange={e => setForm({ ...form, sobrenome: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      placeholder="Apelidos"
-                      required
-                    />
-                  </div>
+                  {!isStep1Done && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-widest shrink-0">Complete Passo 1</span>}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Data de Nascimento *</label>
-                    <input
-                      type="date"
-                      value={form.data_nascimento}
-                      onChange={e => setForm({ ...form, data_nascimento: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                      required
-                    />
-                    <span className="text-[9px] text-slate-400 block mt-1 pl-1">Exigido ser maior de 18 anos.</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">NIF (Contribuinte) *</label>
-                      <input
-                        type="text"
-                        value={form.nif}
-                        onChange={e => setForm({ ...form, nif: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                        placeholder="9 algarismos"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Cartão Cidadão *</label>
-                      <input
-                        type="text"
-                        value={form.cartao_cidadao}
-                        onChange={e => setForm({ ...form, cartao_cidadao: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                        placeholder="N.º documento"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100/60">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Endereço de Residência *</label>
-                  <input
-                    type="text"
-                    value={form.endereco}
-                    onChange={e => setForm({ ...form, endereco: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none mb-3"
-                    placeholder="Rua, Avenida, Praça, Lote, Andar..."
-                    required
-                  />
-                  <input
-                    type="text"
-                    value={form.endereco_cont}
-                    onChange={e => setForm({ ...form, endereco_cont: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none mb-3"
-                    placeholder="Complemento / Bloco / Apartamento"
-                  />
-                  
+                {isStep1Done && (
+                  <div className="space-y-4">
+                  {/* Name fields row */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Localidade *</label>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Nome Próprio *</label>
                       <input
                         type="text"
-                        value={form.localidade}
-                        onChange={e => setForm({ ...form, localidade: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                        placeholder="Nazaré, Alcobaça, etc."
+                        value={form.nome}
+                        onChange={e => setForm({ ...form, nome: e.target.value })}
+                        className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.nome.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                        placeholder="Primeiro"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Código Postal *</label>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Nomes do Meio</label>
                       <input
                         type="text"
-                        value={form.codigo_postal}
-                        onChange={e => setForm({ ...form, codigo_postal: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                        placeholder="0000-000"
+                        value={form.nome_meio}
+                        onChange={e => setForm({ ...form, nome_meio: e.target.value })}
+                        className="w-full bg-[#f8fafc] border border-slate-200 text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none"
+                        placeholder="Se aplicável"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Apelidos *</label>
+                      <input
+                        type="text"
+                        value={form.sobrenome}
+                        onChange={e => setForm({ ...form, sobrenome: e.target.value })}
+                        className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.sobrenome.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                        placeholder="Último"
                         required
                       />
                     </div>
+                  </div>
+
+                  {/* Birthday & CC & NIF row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">País</label>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Data de Nascimento *</label>
                       <input
-                        type="text"
-                        value={form.pais}
-                        onChange={e => setForm({ ...form, pais: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                        placeholder="Portugal"
+                        type="date"
+                        value={form.data_nascimento}
+                        onChange={e => setForm({ ...form, data_nascimento: e.target.value })}
+                        className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.data_nascimento ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                        required
+                      />
+                      <span className="text-[9px] text-slate-400 block mt-1 pl-1 leading-none">Obrigatório ser maior de 18 anos.</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">NIF (Contribuinte) *</label>
+                        <input
+                          type="text"
+                          value={form.nif}
+                          maxLength={9}
+                          onChange={e => setForm({ ...form, nif: e.target.value })}
+                          className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.nif.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                          placeholder="9 algarismos"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Cartão Cidadão *</label>
+                        <input
+                          type="text"
+                          value={form.cartao_cidadao}
+                          onChange={e => setForm({ ...form, cartao_cidadao: e.target.value })}
+                          className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.cartao_cidadao.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                          placeholder="N.º documento"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Address info */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 pl-1">Endereço de Residência Completo *</label>
+                    <input
+                      type="text"
+                      value={form.endereco}
+                      onChange={e => setForm({ ...form, endereco: e.target.value })}
+                      className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none mb-3 ${!form.endereco.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                      placeholder="Rua, Avenida, Praça, Lote, Andar..."
+                      required
+                    />
+                    <input
+                      type="text"
+                      value={form.endereco_cont}
+                      onChange={e => setForm({ ...form, endereco_cont: e.target.value })}
+                      className="w-full bg-[#f8fafc] border border-slate-200 text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none mb-3"
+                      placeholder="Complemento / Bloco / Apartamento (Opcional)"
+                    />
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Localidade *</label>
+                        <input
+                          type="text"
+                          value={form.localidade}
+                          onChange={e => setForm({ ...form, localidade: e.target.value })}
+                          className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.localidade.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                          placeholder="Nazaré, Alcobaça, etc."
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">Código Postal *</label>
+                        <input
+                          type="text"
+                          value={form.codigo_postal}
+                          placeholder="0000-000"
+                          onChange={e => setForm({ ...form, codigo_postal: e.target.value })}
+                          className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.codigo_postal.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1">País *</label>
+                        <input
+                          type="text"
+                          value={form.pais}
+                          onChange={e => setForm({ ...form, pais: e.target.value })}
+                          className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.pais.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contact row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1 flex items-center gap-1.5">
+                        <Phone size={12} className="text-slate-400" /> Telemóvel *
+                      </label>
+                      <input
+                        type="tel"
+                        value={form.telefone}
+                        onChange={e => setForm({ ...form, telefone: e.target.value })}
+                        className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.telefone.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                        placeholder="ex: 9xxxxxxxx"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1 flex items-center gap-1.5">
+                        <Mail size={12} className="text-slate-400" /> E-mail de Contacto *
+                      </label>
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={e => setForm({ ...form, email: e.target.value })}
+                        className={`w-full bg-[#f8fafc] text-xs text-slate-800 px-4 py-3 rounded-xl focus:bg-white focus:outline-none ${!form.email.trim() ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:border-blue-500'}`}
+                        placeholder="exemplo@gmail.com"
+                        required
                       />
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                      <Phone size={12} className="text-slate-400" /> Telemóvel *
+                  <div className="pt-2 flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="autoriza_email"
+                      checked={form.autoriza_email}
+                      onChange={e => setForm({ ...form, autoriza_email: e.target.checked })}
+                      className="w-4 h-4 text-[#0a4d68] rounded border-slate-300 focus:ring-[#0a4d68]"
+                    />
+                    <label htmlFor="autoriza_email" className="text-slate-600 text-[11px] font-semibold select-none leading-normal">
+                      Autorizo expressamente a GRUVA a enviar e-mails relativos ao abrigo e ao meu afilhado.
                     </label>
-                    <input
-                      type="tel"
-                      value={form.telefone}
-                      onChange={e => setForm({ ...form, telefone: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                      placeholder="9xxxxxxxx"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                      <Mail size={12} className="text-slate-400" /> E-mail de Contacto *
-                    </label>
-                    <input
-                      type="email"
-                      value={form.email}
-                      onChange={e => setForm({ ...form, email: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none"
-                      placeholder="exemplo@gmail.com"
-                      required
-                    />
                   </div>
                 </div>
-
-                <div className="pt-3 flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="autoriza_email"
-                    checked={form.autoriza_email}
-                    onChange={e => setForm({ ...form, autoriza_email: e.target.checked })}
-                    className="w-4 h-4 text-blue-500 rounded border-slate-300 focus:ring-blue-500"
-                  />
-                  <label htmlFor="autoriza_email" className="text-slate-600 text-xs font-semibold select-none leading-normal">
-                    Autorizo expressamente a GRUVA a contactar-me por e-mail para receber novidades do abrigo e do meu afilhado.
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* SEÇÃO 3: Contribuição Financeira e Outros */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-6 sm:p-8 shadow-sm">
-              <h2 className="text-lg font-black text-slate-800 flex items-center gap-2.5 mb-6 border-b border-slate-100 pb-3">
-                <CreditCard size={18} className="text-emerald-500" />
-                <span>3. Valores e Contribuição Desejada</span>
-              </h2>
-
-              {/* Informações de pagamento */}
-              <div className="bg-slate-50/70 p-4 border border-slate-100 rounded-2xl mb-6">
-                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-2">Canais de Contribuição Disponíveis:</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-605">
-                  <div className="flex items-start gap-2.5">
-                    <span className="bg-pink-100 text-pink-600 p-1.5 rounded-lg text-[10px] font-bold font-mono">MBWay</span>
-                    <div>
-                      <p className="font-bold text-slate-800">968 537 272</p>
-                      <p className="text-[10px] text-slate-405">GRUVA Nazaré</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2.5">
-                    <span className="bg-blue-100 text-blue-600 p-1.5 rounded-lg text-[10px] font-bold font-mono">IBAN</span>
-                    <div>
-                      <p className="font-bold text-slate-805 select-all">PT50 0045 5020 4034 5236 0979 4</p>
-                      <p className="text-[10px] text-slate-405">Enviar comprovativo por e-mail</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-404 uppercase tracking-wider mb-2.5">Valor Mensal (Trata-se de uma contribuição mensal obrigatória de valor mínimo de 10,00 €) *</label>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mb-4">
-                  {[
-                    { val: '10', lbl: '10,00 €' },
-                    { val: '15', lbl: '15,00 €' },
-                    { val: '20', lbl: '20,00 €' },
-                    { val: '25', lbl: '25,00 €' }
-                  ].map(opt => (
-                    <button
-                      key={opt.val}
-                      type="button"
-                      onClick={() => setForm({ ...form, valor_opcao: opt.val, valor_outro: '' })}
-                      className={`py-3.5 px-4 font-bold border transition-all text-xs rounded-2xl ${
-                        form.valor_opcao === opt.val
-                          ? 'bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/15'
-                          : 'bg-white border-slate-205 text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      {opt.lbl}
-                    </button>
-                  ))}
-                  
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, valor_opcao: 'outro' })}
-                    className={`col-span-2 sm:col-span-1 py-3.5 px-4 font-bold border transition-all text-xs rounded-2xl ${
-                      form.valor_opcao === 'outro'
-                        ? 'bg-emerald-500 text-white border-emerald-500'
-                        : 'bg-white border-slate-205 text-slate-705 hover:bg-slate-50'
-                    }`}
-                  >
-                    Outro Valor
-                  </button>
-                </div>
-
-                {form.valor_opcao === 'outro' && (
-                  <div className="mb-4">
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Inserir valor personalizado (€) *</label>
-                    <input
-                      type="number"
-                      min="10"
-                      value={form.valor_outro}
-                      onChange={e => setForm({ ...form, valor_outro: e.target.value })}
-                      placeholder="Exemplo: 50.00"
-                      className="bg-slate-50 border border-slate-205 text-xs text-slate-808 px-4 py-3 rounded-2xl focus:outline-none w-full sm:max-w-xs focus:ring-1 focus:ring-emerald-500"
-                      required={form.valor_opcao === 'outro'}
-                    />
-                  </div>
                 )}
               </div>
 
-              {/* Outras contribuições */}
-              <div className="pt-4 border-t border-slate-100 space-y-4">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2.5">Desejas assumir outras despesas? (Opcional)</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {[
-                      { id: 'contrib_vacinas', lbl: 'Vacinas (Suportar despesa vacinal anual)' },
-                      { id: 'contrib_tosquia_banho', lbl: 'Tosquia / Banho do afilhado' },
-                      { id: 'contrib_racao_especial', lbl: 'Ração especial (Caso necessite de gastrite/hipoalergénica)' },
-                      { id: 'contrib_medicacao', lbl: 'Medicação (Custos de anti-inflamatórios ou tratamentos)' },
-                      { id: 'contrib_acessorios', lbl: 'Acessórios (Trela, coleira, peitoral, brinquedos...)' }
-                    ].map(cb => (
-                      <div key={cb.id} className="flex items-center gap-2.5 bg-[#f8fafc] border border-slate-100 p-2.5 rounded-xl">
-                        <input
-                          type="checkbox"
-                          id={cb.id}
-                          checked={(form as any)[cb.id]}
-                          onChange={e => setForm({ ...form, [cb.id]: e.target.checked })}
-                          className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500 shrink-0"
-                        />
-                        <label htmlFor={cb.id} className="text-slate-600 text-[11px] font-medium leading-none select-none cursor-pointer">
-                          {cb.lbl}
-                        </label>
+              {/* SECTION 3: VALORES E QUOTA */}
+              <div className={`space-y-6 pb-6 border-b border-slate-100 transition-opacity duration-300 ${isStep2Done ? '' : 'opacity-40 pointer-events-none'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2 mb-1.5">
+                      <CreditCard size={18} className={isStep2Done ? "text-emerald-500" : "text-slate-400"} />
+                      <span>3. Valores e Quota de Apadrinhamento</span>
+                    </h2>
+                    <p className="text-[11px] text-slate-400 leading-normal">
+                      Trata-se de uma quota mensal continuada (mínimo de 10,00 €) para garantir a subsistência digna do animal.
+                    </p>
+                  </div>
+                  {!isStep2Done && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-widest shrink-0">Complete Passo 2</span>}
+                </div>
+
+                {isStep2Done && (
+                  <div className="space-y-4">
+                  {/* Valor picker buttons */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-2 pl-1">Selecione a Quota Mensal Pretendida *</label>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mb-4">
+                      {[
+                        { val: '10', lbl: '10,00 €' },
+                        { val: '15', lbl: '15,00 €' },
+                        { val: '20', lbl: '20,00 €' },
+                        { val: '25', lbl: '25,00 €' }
+                      ].map(opt => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => setForm({ ...form, valor_opcao: opt.val, valor_outro: '' })}
+                          className={`py-3 px-2 font-bold border transition-all text-xs rounded-xl ${
+                            form.valor_opcao === opt.val
+                              ? 'bg-[#0a4d68] text-white border-[#0a4d68] shadow-sm'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {opt.lbl}
+                        </button>
+                      ))}
+                      
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, valor_opcao: 'outro' })}
+                        className={`col-span-2 sm:col-span-1 py-3 px-2 font-bold border transition-all text-xs rounded-xl ${
+                          form.valor_opcao === 'outro'
+                            ? 'bg-[#0a4d68] text-white border-[#0a4d68] shadow-sm'
+                            : 'bg-white border-slate-200 text-slate-750 hover:bg-slate-50'
+                        }`}
+                      >
+                        Outro Valor
+                      </button>
+                    </div>
+
+                    {form.valor_opcao === 'outro' && (
+                      <div className="bg-[#0a4d68]/5 p-4 rounded-2xl border border-[#0a4d68]/15 mb-4">
+                        <label className="block text-[10px] font-bold text-[#0a4d68] uppercase mb-1.5 pl-1">Inserir valor personalizado mensal (Mínimo 10 €) *</label>
+                        <div className="relative max-w-xs">
+                          <input
+                            type="number"
+                            min="10"
+                            value={form.valor_outro}
+                            onChange={e => setForm({ ...form, valor_outro: e.target.value })}
+                            placeholder="ex: 50.00"
+                            className={`bg-white text-xs text-slate-800 px-4 py-2.5 rounded-xl focus:outline-none w-full focus:ring-2 ${!form.valor_outro || parseFloat(form.valor_outro) < 10 ? 'border-2 border-rose-400 focus:ring-rose-100 focus:border-rose-400' : 'border border-slate-200 focus:ring-[#0a4d68]/20 focus:border-[#0a4d68]/40'}`}
+                            required={form.valor_opcao === 'outro'}
+                          />
+                          <div className="absolute right-4 top-2 text-slate-400 font-bold text-xs">EUR</div>
+                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
 
-                <div className="pt-2">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2.5">Desejas contribuir de forma presencial / pessoal?</h3>
-                  <div className="grid grid-cols-1 gap-2.5">
-                    <div className="flex items-center gap-2.5 bg-pink-50/20 border border-pink-100/10 p-2.5 rounded-xl">
-                      <input
-                        type="checkbox"
-                        id="contrib_pessoal_divulgacao"
-                        checked={form.contrib_pessoal_divulgacao}
-                        onChange={e => setForm({ ...form, contrib_pessoal_divulgacao: e.target.checked })}
-                        className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 shrink-0"
-                      />
-                      <label htmlFor="contrib_pessoal_divulgacao" className="text-slate-600 text-[11px] font-semibold leading-none cursor-pointer">
-                        Divulgação ativa do meu afilhado para adoção responsável (redes sociais, fotos, panfletos)
-                      </label>
+                  {/* Outras despesas */}
+                  <div className="pt-4 border-t border-slate-100 space-y-4">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Suportar outras despesas voluntárias? (Opcional)</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {[
+                          { id: 'contrib_vacinas', lbl: 'Vacinas (Suportar despesa vacinal anual)' },
+                          { id: 'contrib_tosquia_banho', lbl: 'Tosquias e Banhos' },
+                          { id: 'contrib_racao_especial', lbl: 'Ração Especial/Veterinária (se necessária)' },
+                          { id: 'contrib_medicacao', lbl: 'Tratamento Medicamentoso ou Suplementação' },
+                          { id: 'contrib_acessorios', lbl: 'Acessórios e Brinquedos' }
+                        ].map(cb => (
+                          <div key={cb.id} className="flex items-center gap-2.5 bg-[#f8fafc] border border-slate-150 p-2.5 rounded-xl hover:bg-slate-100/50 transition-colors">
+                            <input
+                              type="checkbox"
+                              id={cb.id}
+                              checked={(form as any)[cb.id]}
+                              onChange={e => setForm({ ...form, [cb.id]: e.target.checked })}
+                              className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 shrink-0"
+                            />
+                            <label htmlFor={cb.id} className="text-slate-600 text-[11px] font-semibold leading-normal select-none cursor-pointer">
+                              {cb.lbl}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2.5 bg-pink-50/20 border border-pink-100/10 p-2.5 rounded-xl">
-                      <input
-                        type="checkbox"
-                        id="contrib_pessoal_passeios"
-                        checked={form.contrib_pessoal_passeios}
-                        onChange={e => setForm({ ...form, contrib_pessoal_passeios: e.target.checked })}
-                        className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 shrink-0"
-                      />
-                      <label htmlFor="contrib_pessoal_passeios" className="text-slate-600 text-[11px] font-semibold cursor-pointer">
-                        Vir passeá-lo temporariamente, escová-lo, mimá-lo ou estar com ele na zona controlada do canil
-                      </label>
+                    {/* Presencial Help */}
+                    <div className="pt-2">
+                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Pretende efetuar ajuda presencial? (Opcional)</h3>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-2.5 bg-pink-50/10 border border-pink-100/10 p-2.5 rounded-xl">
+                          <input
+                            type="checkbox"
+                            id="contrib_pessoal_divulgacao"
+                            checked={form.contrib_pessoal_divulgacao}
+                            onChange={e => setForm({ ...form, contrib_pessoal_divulgacao: e.target.checked })}
+                            className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 shrink-0"
+                          />
+                          <label htmlFor="contrib_pessoal_divulgacao" className="text-slate-650 text-[11px] font-bold leading-normal cursor-pointer">
+                            Divulgação ativa do meu afilhado para adoção (partilhas nas redes sociais)
+                          </label>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 bg-pink-50/10 border border-pink-100/10 p-2.5 rounded-xl">
+                          <input
+                            type="checkbox"
+                            id="contrib_pessoal_passeios"
+                            checked={form.contrib_pessoal_passeios}
+                            onChange={e => setForm({ ...form, contrib_pessoal_passeios: e.target.checked })}
+                            className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 shrink-0"
+                          />
+                          <label htmlFor="contrib_pessoal_passeios" className="text-slate-650 text-[11px] font-bold leading-normal cursor-pointer">
+                            Passeios ao cão, escovar ou dar mimos dentro do recinto na Nazaré
+                          </label>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-pink-600 font-medium pl-1 block">
-                      ** Nota de Segurança: Por razões psicológicas, não é permitido levar o animal para passar o fim-de-semana fora da zona do canil, pois o regresso ao abrigo é altamente doloroso para o animal.
-                    </span>
                   </div>
                 </div>
+                )}
               </div>
-            </div>
 
-            {/* SEÇÃO 4: Confirmação de Escolhas & Assinatura Digital */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-6 sm:p-8 shadow-sm">
-              <h2 className="text-lg font-black text-slate-800 flex items-center gap-2.5 mb-6 border-b border-slate-100 pb-3">
-                <FileText size={18} className="text-blue-500" />
-                <span>4. Declaração de Assinatura</span>
-              </h2>
-
-              <div className="space-y-4">
-                <div className="bg-slate-50 p-4 rounded-xl text-[11px] text-slate-500 leading-relaxed font-sans space-y-2 border border-slate-150">
-                  <p>
-                    <strong>Declaração de Consentimento:</strong> Ao preencher esta ficha e introduzir o meu nome abaixo, declaro expressamente que fui informado, antes de assinar eletronicamente este documento, de que os meus dados pessoais são confidenciais e serão usados exclusivamente para a gestão interna da minha relação com a GRUVA e emissão de avisos ou para me parabenizar.
-                  </p>
-                  <p>
-                    Compreendo e aceito que o compromisso assenta na responsabilidade civil voluntária de apoiar a subsistência do patudo mencionado, sob quota mensal a partir do dia 10 de cada mês subsequente.
-                  </p>
+              {/* SECTION 4: ASSINATURA E SUBMISSAO */}
+              <div className={`space-y-6 transition-opacity duration-300 ${isStep3Done ? '' : 'opacity-40 pointer-events-none'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2 mb-1.5">
+                      <FileText size={18} className={isStep3Done ? "text-blue-500" : "text-slate-400"} />
+                      <span>4. Assinatura Digital & Autorização</span>
+                    </h2>
+                    <p className="text-[11px] text-slate-400 leading-normal">
+                      Declaração de consentimento e recolha de assinatura eletrónica obrigatória para efeito protocolar.
+                    </p>
+                  </div>
+                  {!isStep3Done && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-widest shrink-0">Complete Passo 3</span>}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Escreve o teu Nome Completo (Assinatura Eletrónica) *</label>
-                  <input
-                    type="text"
-                    value={form.assinatura_digital}
-                    onChange={e => setForm({ ...form, assinatura_digital: e.target.value })}
-                    className="w-full bg-[#fcfdff] border border-blue-200/80 text-lg text-blue-900 px-4 py-3.5 rounded-2xl italic font-serif tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="Assinar eletronicamente..."
-                    required
-                  />
-                  <span className="text-[10px] text-slate-400 block mt-1.5 pl-1">Escreve exatamente o teu nome de forma a constar na Ficha do Livro de Ouro da GRUVA.</span>
-                </div>
+                {isStep3Done && (
+                  <div className="space-y-4">
+                  {/* Consent text */}
+                  <div className="bg-slate-50 p-4 rounded-xl text-[10.5px] text-slate-500 leading-relaxed font-sans space-y-2 border border-slate-100">
+                    <p>
+                      <strong>Declaração de Consentimento:</strong> Ao preencher esta ficha e introduzir a minha assinatura abaixo, declaro expressamente que fui informado, antes de assinar eletronicamente este documento, de que os meus dados pessoais são confidenciais e serão usados exclusivamente para a gestão interna da minha relação com a GRUVA e emissão de avisos ou para me parabenizar.
+                    </p>
+                    <p>
+                      Compreendo e aceito que o compromisso assenta na responsabilidade civil voluntária de apoiar a subsistência do patudo mencionado, sob quota mensal a partir do dia 10 de cada mês subsequente.
+                    </p>
+                  </div>
 
-                <div className="flex items-start gap-2.5 pt-3">
-                  <input
-                    type="checkbox"
-                    id="aceitou_termos"
-                    checked={form.aceitou_termos}
-                    onChange={e => setForm({ ...form, aceitou_termos: e.target.checked })}
-                    className="w-4 h-4 text-blue-500 rounded border-slate-302 focus:ring-blue-500 mt-0.5 shrink-0"
-                    required
-                  />
-                  <label htmlFor="aceitou_termos" className="text-slate-600 text-xs font-black select-none cursor-pointer leading-tight">
-                    Declaro sob compromisso de honra que preenchi os dados em plena verdade, tenho mais de 18 anos e autorizo o envio eletrónico do apadrinhamento para aprovação administrativa da associação.
-                  </label>
-                </div>
-              </div>
-            </div>
+                  <div className="space-y-3">
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Desenhe a tua Assinatura no Quadro Abaixo *
+                      </label>
+                      
+                      <div className="relative border-2 border-dashed border-blue-200 bg-[#fbfcff] rounded-2xl overflow-hidden p-1 shadow-sm">
+                        {/* Signature canvas */}
+                        <canvas
+                          ref={canvasRef}
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                          className="w-full h-40 bg-white rounded-xl cursor-crosshair block touch-none"
+                        />
+                        
+                        {/* Decorative line indicating signature spot */}
+                        <div className="absolute bottom-4 left-6 right-6 pointer-events-none flex items-end justify-between border-b border-slate-200 pb-1">
+                          <span className="text-slate-300  text-lg italic select-none">X</span>
+                          <span className="text-[8px] text-slate-300 font-sans uppercase tracking-wider select-none">Assina sobre a linha</span>
+                        </div>
 
-            {/* BOTÃO DE SUBMISSAO */}
-            <div className="pt-3">
-              <button
-                type="submit"
-                disabled={submitting}
-                className={`w-full bg-primary-500 hover:bg-primary-600 text-white font-extrabold py-4 px-6 rounded-full text-sm block tracking-widest text-center uppercase shadow-md hover:shadow-lg transition-all ${
-                  submitting ? 'opacity-70 cursor-not-allowed' : ''
-                }`}
-              >
-                {submitting ? 'A Enviar Ficha...' : 'Submeter Ficha de Apadrinhamento'}
-              </button>
-            </div>
+                        {isCanvasDrawingEmpty && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-400 text-[10px]">
+                            <p className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100 shadow-sm font-semibold">
+                              <Sparkles size={12} className="text-blue-500 animate-pulse shrink-0" />
+                              <span>Usa o rato ou ecrã tátil para assinar</span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
 
-          </form>
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={clearCanvas}
+                          className="text-xs text-red-600 hover:text-red-700 font-bold bg-red-50 hover:bg-red-100 border border-red-200/60 transition-all py-1.5 px-3 rounded-xl flex items-center gap-1"
+                        >
+                          <Eraser size={11} />
+                          <span>Limpar Quadro</span>
+                        </button>
 
-          {/* Sidebar Guidelines Summary / Info Cards (1 col) */}
-          <div className="space-y-6">
-            
-            {/* Animal Card Spotlight if preselected */}
-            {selectedAnimalObj && (
-              <div className="bg-white rounded-[2rem] border border-slate-100 p-5 shadow-sm overflow-hidden flex flex-col">
-                <span className="text-[9.5px] font-black uppercase text-pink-600 tracking-wider mb-2.5 font-mono block">Afilhado Escolhido:</span>
-                <div className="relative aspect-[3/2] rounded-2xl overflow-hidden mb-4 bg-slate-50">
-                  {selectedAnimalObj.foto_url ? (
-                    <img 
-                      src={selectedAnimalObj.foto_url} 
-                      alt={selectedAnimalObj.nome}
-                      className="w-full h-full object-cover"
+                        {!isCanvasDrawingEmpty && (
+                          <span className="text-[10px] text-emerald-650 font-black flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-lg">
+                            <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />
+                            <span>Capturada</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                  <div className="flex items-start gap-2.5 pt-3 border-t border-slate-100">
+                    <input
+                      type="checkbox"
+                      id="aceitou_termos"
+                      checked={form.aceitou_termos}
+                      onChange={e => setForm({ ...form, aceitou_termos: e.target.checked })}
+                      className="w-4 h-4 text-blue-500 rounded border-slate-300 focus:ring-blue-500 mt-0.5 shrink-0"
+                      required
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300">
-                      <PawPrint size={32} />
-                    </div>
-                  )}
-                  <span className="absolute bottom-3 left-3 bg-white/95 text-slate-800 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full border border-slate-100 capitalize">
-                    {selectedAnimalObj.idade_aprox}
-                  </span>
+                    <label htmlFor="aceitou_termos" className="text-slate-600 text-[11px] font-bold select-none cursor-pointer leading-tight">
+                      Declaro sob compromisso de honra que preenchi os dados com total verdade, autorizando o envio digital para aprovação correspondente da GRUVA Nazaré.
+                    </label>
+                  </div>
                 </div>
-                <h3 className="font-extrabold text-lg text-primary-950 mb-1.5">{selectedAnimalObj.nome}</h3>
-                <p className="text-slate-500 text-[11.5px] line-clamp-3 leading-relaxed mb-1.5">{selectedAnimalObj.descricao}</p>
-                <div className="h-px bg-slate-100 my-2"></div>
-                <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono mt-1">
-                  <span>Espécie: {selectedAnimalObj.especie}</span>
-                  <span>Porte: {selectedAnimalObj.porte}</span>
-                </div>
+                )}
               </div>
-            )}
 
-            {/* O que significa Apadrinhar (PDF Page 1 OCR summary) */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-4">
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-2">
-                <Compass size={14} className="text-blue-500" />
-                <span>O que significa Apadrinhar?</span>
-              </h3>
-              <p className="text-slate-500 text-xs leading-relaxed">
-                Apadrinhar é um ato de solidariedade ao alcance de todos os que querem apoiar os "animais de ninguém". Ao ser padrinho ou madrinha, crias um vínculo especial com o animal, garantindo que ele tenha cuidados dedicados durante a estadia no abrigo.
-              </p>
-              <ul className="text-[11px] text-slate-500 leading-normal space-y-2 list-disc pl-4 font-medium">
-                <li>O animal continua disponível para adoção responsável.</li>
-                <li>Caso ele seja adotado, podes transferir o teu apadrinhamento para outro amigo.</li>
-                <li>Qualquer pessoa pode apadrinhar um ou mais patudos!</li>
-              </ul>
-            </div>
-
-            {/* Como funciona a cessão (regulamento) */}
-            <div className="bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm space-y-4">
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-2">
-                <ShieldAlert size={14} className="text-amber-500" />
-                <span>Extinção do Vínculo</span>
-              </h3>
-              <p className="text-slate-500 text-xs leading-relaxed">
-                O estatuto de padrinho ou madrinha é flexível. Podes cessar ou alterar a inscrição a qualquer momento:
-              </p>
-              <div className="space-y-2 text-[11px] text-slate-500 leading-relaxed font-semibold">
-                <p className="flex gap-2 text-rose-700 bg-rose-50/40 p-2 rounded-xl">
-                  <span>🛑</span>
-                  <span>Caso o padrinho não efetue qualquer contribuição financeira por período consecutivo de 3 meses, o vínculo será extinto unilateralmente.</span>
-                </p>
-                <p className="flex gap-2 text-slate-650 bg-slate-50 p-2 rounded-xl">
-                  <span>✉️</span>
-                  <span>Basta enviar um e-mail ou carta escrita comunicando a vontade de deixar de ter esse estatuto. Sem burocracias.</span>
-                </p>
+              {/* SUBMIT BUTTON */}
+              <div className={`pt-8 mt-8 border-t border-slate-100 flex justify-end transition-opacity duration-300 ${isStep3Done ? '' : 'hidden'}`}>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className={`flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white transition-all text-xs font-bold shadow-md shadow-emerald-500/10 ${
+                    submitting ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
+                >
+                  <ShieldCheck size={14} />
+                  <span>{submitting ? 'A submeter...' : 'Submeter Ficha Oficial'}</span>
+                </button>
               </div>
-            </div>
-
-            {/* Informação sobre fins de semana */}
-            <div className="bg-[#fffdfa] rounded-[2rem] border border-amber-100/50 p-6 shadow-sm space-y-3">
-              <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest flex items-center gap-2">
-                <Sparkles size={14} className="text-amber-500" />
-                <span>Nota Psicológica Importante</span>
-              </h3>
-              <p className="text-amber-900/80 text-[11px] leading-relaxed">
-                De salientar que não é permitido levar o animal para passar o fim-de-semana fora da zona do canil. Estudo comportamentais da associação provam que o retorno ao espaço habitual do abrigo é extremamente doloroso e confuso para o cão. Apoia-nos com passeios frequentes na região autorizada!
-              </p>
-            </div>
-
-            {/* Quick Access Admin link */}
-            <div className="bg-slate-100 rounded-3xl p-4 text-center border border-slate-200/50">
-              <p className="text-[10px] text-slate-400 font-bold mb-2 uppercase">Já és administrador do abrigo?</p>
-              <Link to="/admin" className="inline-flex items-center gap-1 text-[11px] font-black text-blue-600 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">
-                <LogIn size={11} /> Conconsola Administrativa
-              </Link>
-            </div>
-
+            </form>
           </div>
-
         </div>
 
       </div>
     </div>
+  );
+}
+
+// Simple dot spinner placeholder component inside the same file to keep imports standard
+function SpinnerDot() {
+  return (
+    <span className="relative flex h-2 w-2 mr-0.5">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+    </span>
   );
 }

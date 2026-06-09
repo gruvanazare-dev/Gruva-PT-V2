@@ -10,6 +10,7 @@ export interface Animal {
   porte: string;
   estado: string; // 'Disponível', 'Em FAT', 'Adotado'
   foto_url: string;
+  fotos?: string[] | null;
   descricao: string;
   created_at?: string;
 }
@@ -297,21 +298,37 @@ export const dataService = {
 
     // 2. Attempt to save in Supabase as well
     try {
+      const payload: any = {
+        id: newAnimal.id,
+        nome: newAnimal.nome,
+        especie: newAnimal.especie,
+        raca: newAnimal.raca,
+        idade_aprox: newAnimal.idade_aprox,
+        sexo: newAnimal.sexo,
+        porte: newAnimal.porte,
+        estado: newAnimal.estado,
+        foto_url: newAnimal.foto_url,
+        fotos: newAnimal.fotos || null,
+        descricao: newAnimal.descricao
+      };
+
       const { error } = await supabase
         .from('animais')
-        .insert([{
-          id: newAnimal.id,
-          nome: newAnimal.nome,
-          especie: newAnimal.especie,
-          raca: newAnimal.raca,
-          idade_aprox: newAnimal.idade_aprox,
-          sexo: newAnimal.sexo,
-          porte: newAnimal.porte,
-          estado: newAnimal.estado,
-          foto_url: newAnimal.foto_url,
-          descricao: newAnimal.descricao
-        }]);
-      if (error) console.log('Supabase RLS or insert restriction caught:', error.message);
+        .insert([payload]);
+
+      if (error) {
+        if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
+          // Fallback if 'fotos' column is missing in Supabase schema
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.fotos;
+          const { error: errRetry } = await supabase
+            .from('animais')
+            .insert([fallbackPayload]);
+          if (errRetry) console.log('Supabase fallback insert restriction:', errRetry.message);
+        } else {
+          console.log('Supabase insert restriction caught:', error.message);
+        }
+      }
     } catch (e) {
       console.warn('Could not insert to Supabase, but saved locally:', e);
     }
@@ -340,21 +357,37 @@ export const dataService = {
 
     // Try in Supabase
     try {
+      const payload: any = {
+        nome: updatedFields.nome,
+        especie: updatedFields.especie,
+        raca: updatedFields.raca,
+        idade_aprox: updatedFields.idade_aprox,
+        sexo: updatedFields.sexo,
+        porte: updatedFields.porte,
+        estado: updatedFields.estado,
+        foto_url: updatedFields.foto_url,
+        fotos: updatedFields.fotos !== undefined ? updatedFields.fotos : undefined,
+        descricao: updatedFields.descricao
+      };
+
       const { error } = await supabase
         .from('animais')
-        .update({
-          nome: updatedFields.nome,
-          especie: updatedFields.especie,
-          raca: updatedFields.raca,
-          idade_aprox: updatedFields.idade_aprox,
-          sexo: updatedFields.sexo,
-          porte: updatedFields.porte,
-          estado: updatedFields.estado,
-          foto_url: updatedFields.foto_url,
-          descricao: updatedFields.descricao
-        })
+        .update(payload)
         .eq('id', id);
-      if (error) console.log('Supabase update rejected by RLS:', error.message);
+
+      if (error) {
+        if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.fotos;
+          const { error: errRetry } = await supabase
+            .from('animais')
+            .update(fallbackPayload)
+            .eq('id', id);
+          if (errRetry) console.log('Supabase fallback update rejected by RLS:', errRetry.message);
+        } else {
+          console.log('Supabase update rejected by RLS:', error.message);
+        }
+      }
     } catch (e) {
       console.warn('Could not update in Supabase, but saved locally:', e);
     }
@@ -525,12 +558,12 @@ export const dataService = {
           email: newPadrinho.email,
           telefone: newPadrinho.telefone,
           valor_mensal: newPadrinho.valor_mensal,
-          data_inicio: newPadrinho.data_inicio,
+          data_inicio: newPadrinho.data_inicio ? newPadrinho.data_inicio : null,
           estado: newPadrinho.estado,
           periodicidade: newPadrinho.periodicidade,
           observacoes: newPadrinho.observacoes,
           periodo: newPadrinho.periodo,
-          data_fim: newPadrinho.data_fim,
+          data_fim: newPadrinho.data_fim ? newPadrinho.data_fim : null,
           endereco: newPadrinho.endereco,
           endereco_cont: newPadrinho.endereco_cont,
           localidade: newPadrinho.localidade,
@@ -538,7 +571,7 @@ export const dataService = {
           pais: newPadrinho.pais,
           cartao_cidadao: newPadrinho.cartao_cidadao,
           nif: newPadrinho.nif,
-          data_nascimento: newPadrinho.data_nascimento,
+          data_nascimento: newPadrinho.data_nascimento ? newPadrinho.data_nascimento : null,
           autoriza_email: newPadrinho.autoriza_email,
           contrib_vacinas: newPadrinho.contrib_vacinas,
           contrib_tosquia_banho: newPadrinho.contrib_tosquia_banho,
@@ -586,12 +619,12 @@ export const dataService = {
           email: updatedFields.email,
           telefone: updatedFields.telefone,
           valor_mensal: updatedFields.valor_mensal,
-          data_inicio: updatedFields.data_inicio,
+          data_inicio: updatedFields.data_inicio ? updatedFields.data_inicio : undefined,
           estado: updatedFields.estado,
           periodicidade: updatedFields.periodicidade,
           observacoes: updatedFields.observacoes,
           periodo: updatedFields.periodo,
-          data_fim: updatedFields.data_fim,
+          data_fim: updatedFields.data_fim !== undefined ? (updatedFields.data_fim ? updatedFields.data_fim : null) : undefined,
           endereco: updatedFields.endereco,
           endereco_cont: updatedFields.endereco_cont,
           localidade: updatedFields.localidade,
@@ -599,7 +632,7 @@ export const dataService = {
           pais: updatedFields.pais,
           cartao_cidadao: updatedFields.cartao_cidadao,
           nif: updatedFields.nif,
-          data_nascimento: updatedFields.data_nascimento,
+          data_nascimento: updatedFields.data_nascimento !== undefined ? (updatedFields.data_nascimento ? updatedFields.data_nascimento : null) : undefined,
           autoriza_email: updatedFields.autoriza_email,
           contrib_vacinas: updatedFields.contrib_vacinas,
           contrib_tosquia_banho: updatedFields.contrib_tosquia_banho,
@@ -636,5 +669,191 @@ export const dataService = {
     }
 
     return true;
+  },
+
+  async syncLocalToSupabase(): Promise<{
+    animaisInserted: number;
+    padrinhosInserted: number;
+    mensagensInserted: number;
+    errors: string[];
+  }> {
+    const response = {
+      animaisInserted: 0,
+      padrinhosInserted: 0,
+      mensagensInserted: 0,
+      errors: [] as string[]
+    };
+
+    // Obter dados locais atuais (se localStorage estiver vazio, cai nos DEFAULT_... do get)
+    const localAnimais = await this.getAnimais();
+    const localPadrinhos = await this.getPadrinhos();
+    const localMensagens = await this.getMensagens();
+
+    // 1. Sincronizar Animais (upsert para evitar duplicados e atualizar dados)
+    try {
+      if (localAnimais.length > 0) {
+        const animaisToSync = localAnimais.map(a => ({
+          id: a.id,
+          nome: a.nome,
+          especie: a.especie,
+          raca: a.raca,
+          idade_aprox: a.idade_aprox,
+          sexo: a.sexo,
+          porte: a.porte,
+          estado: a.estado,
+          foto_url: a.foto_url,
+          fotos: a.fotos || null,
+          descricao: a.descricao,
+          created_at: a.created_at || new Date().toISOString()
+        }));
+
+        const { error } = await supabase
+          .from('animais')
+          .upsert(animaisToSync, { onConflict: 'id' });
+
+        if (error) {
+          if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
+            // Se falhar por falta da coluna 'fotos', envia sem 'fotos'
+            const fallbackSync = animaisToSync.map(item => {
+              const cleaned = { ...item };
+              delete (cleaned as any).fotos;
+              return cleaned;
+            });
+            const { error: errorFallback } = await supabase
+              .from('animais')
+              .upsert(fallbackSync, { onConflict: 'id' });
+            
+            if (errorFallback) throw errorFallback;
+            response.animaisInserted = fallbackSync.length;
+          } else {
+            throw error;
+          }
+        } else {
+          response.animaisInserted = animaisToSync.length;
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      response.errors.push(`Erro a sincronizar Animais: ${err.message || err}`);
+    }
+
+    // 2. Sincronizar Mensagens
+    try {
+      if (localMensagens.length > 0) {
+        const mensagensToSync = localMensagens.map(m => ({
+          id: m.id,
+          nome: m.nome,
+          email: m.email,
+          telefone: m.telefone,
+          assunto: m.assunto,
+          mensagem: m.mensagem,
+          lida: m.lida ?? false,
+          tratada: m.tratada ?? false,
+          created_at: m.created_at || new Date().toISOString()
+        }));
+
+        const { error } = await supabase
+          .from('mensagens')
+          .upsert(mensagensToSync, { onConflict: 'id' });
+
+        if (error) {
+          // Se for erro de schema cache ou coluna inexistente, tenta de novo sem lida/tratada
+          if (error.code === 'PGRST204' || (error.message && error.message.includes('column'))) {
+            const fallbackSync = localMensagens.map(m => ({
+              id: m.id,
+              nome: m.nome,
+              email: m.email,
+              telefone: m.telefone,
+              assunto: m.assunto,
+              mensagem: m.mensagem,
+              created_at: m.created_at || new Date().toISOString()
+            }));
+            const { error: errorFallback } = await supabase
+              .from('mensagens')
+              .upsert(fallbackSync, { onConflict: 'id' });
+            
+            if (errorFallback) throw errorFallback;
+            response.mensagensInserted = fallbackSync.length;
+          } else {
+            throw error;
+          }
+        } else {
+          response.mensagensInserted = mensagensToSync.length;
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      response.errors.push(`Erro a sincronizar Mensagens: ${err.message || err}`);
+    }
+
+    // 3. Sincronizar Padrinhos
+    try {
+      if (localPadrinhos.length > 0) {
+        const padrinhosToSync = localPadrinhos.map(p => ({
+          id: p.id,
+          animal_id: p.animal_id,
+          nome: p.nome,
+          email: p.email,
+          telefone: p.telefone,
+          valor_mensal: p.valor_mensal,
+          data_inicio: p.data_inicio ? p.data_inicio : null,
+          estado: p.estado,
+          periodicidade: p.periodicidade,
+          observacoes: p.observacoes || '',
+          periodo: p.periodo || '',
+          data_fim: p.data_fim ? p.data_fim : null,
+          endereco: p.endereco || '',
+          endereco_cont: p.endereco_cont || '',
+          localidade: p.localidade || '',
+          codigo_postal: p.codigo_postal || '',
+          pais: p.pais || '',
+          cartao_cidadao: p.cartao_cidadao || '',
+          nif: p.nif || '',
+          data_nascimento: p.data_nascimento ? p.data_nascimento : null,
+          autoriza_email: p.autoriza_email ?? false,
+          contrib_vacinas: p.contrib_vacinas ?? false,
+          contrib_tosquia_banho: p.contrib_tosquia_banho ?? false,
+          contrib_racao_especial: p.contrib_racao_especial ?? false,
+          contrib_medicacao: p.contrib_medicacao ?? false,
+          contrib_acessorios: p.contrib_acessorios ?? false,
+          contrib_pessoal_divulgacao: p.contrib_pessoal_divulgacao ?? false,
+          contrib_pessoal_passeios: p.contrib_pessoal_passeios ?? false,
+          assinatura_digital: p.assinatura_digital || '',
+          created_at: p.created_at || new Date().toISOString()
+        }));
+
+        const { error } = await supabase
+          .from('padrinhos')
+          .upsert(padrinhosToSync, { onConflict: 'id' });
+
+        if (error) throw error;
+        response.padrinhosInserted = padrinhosToSync.length;
+      }
+    } catch (err: any) {
+      console.error(err);
+      response.errors.push(`Erro a sincronizar Padrinhos: ${err.message || err}`);
+    }
+
+    // Garantir que carregamos os dados mais recentes do Supabase de volta para o Local Storage se correr bem
+    try {
+      const { data: dbAnimais, error: errA } = await supabase.from('animais').select('*');
+      if (dbAnimais && dbAnimais.length > 0 && !errA) {
+        storeAnimaisLocal(dbAnimais as Animal[]);
+      }
+
+      const { data: dbPadrinhos, error: errP } = await supabase.from('padrinhos').select('*');
+      if (dbPadrinhos && dbPadrinhos.length > 0 && !errP) {
+        storePadrinhosLocal(dbPadrinhos as Padrinho[]);
+      }
+
+      const { data: dbMensagens, error: errM } = await supabase.from('mensagens').select('*');
+      if (dbMensagens && dbMensagens.length > 0 && !errM) {
+        storeMensagensLocal(dbMensagens as Mensagem[]);
+      }
+    } catch (e) {
+      console.warn('Erro a atualizar memória local a partir do Supabase:', e);
+    }
+
+    return response;
   }
 };

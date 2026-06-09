@@ -9,6 +9,7 @@ import SerVoluntario from './pages/SerVoluntario';
 import SerFat from './pages/SerFat';
 import Admin from './pages/Admin';
 import Apadrinhar from './pages/Apadrinhar';
+import FormularioAdocao from './pages/FormularioAdocao';
 import ScrollToTop from './components/ScrollToTop';
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/ser-voluntario" element={<SerVoluntario />} />
             <Route path="/ser-fat" element={<SerFat />} />
             <Route path="/adocao" element={<Adocao />} />
+            <Route path="/formulario-adocao" element={<FormularioAdocao />} />
             <Route path="/apadrinhar" element={<Apadrinhar />} />
             <Route path="/contactos" element={<Contactos />} />
             <Route path="/admin" element={<Admin />} />

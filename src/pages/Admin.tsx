@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Lock, Mail, User, LogOut, PawPrint, AlertTriangle, 
-  ShieldCheck, RefreshCw, ChevronRight, X, Menu, Award, Heart
+  ShieldCheck, RefreshCw, ChevronRight, X, Menu, Award, Heart, Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { dataService, Animal, Mensagem, Padrinho } from '../lib/dataService';
+import { supabase } from '../lib/supabase';
 
 // Subcomponents
 import AdminPatudosTab from '../components/AdminPatudosTab';
@@ -43,6 +44,7 @@ export default function Admin() {
   const fetchDashboardData = async () => {
     setLoadingData(true);
     try {
+      // 1. Carregar dados locais de imediato (rápido e não bloqueia a interface)
       const [pets, msgs, pads] = await Promise.all([
         dataService.getAnimais(),
         dataService.getMensagens(),
@@ -51,6 +53,26 @@ export default function Admin() {
       setAnimais(pets);
       setMensagens(msgs);
       setPadrinhos(pads);
+
+      // 2. Disparar sincronização em segundo plano de forma automática e transparente
+      dataService.syncLocalToSupabase().then((res) => {
+        if (res && res.errors.length === 0 && (res.animaisInserted > 0 || res.padrinhosInserted > 0 || res.mensagensInserted > 0)) {
+          console.log('Sincronização automática com o Supabase efetuada com sucesso:', res);
+          // Se existirem atualizações, atualizamos o estado local
+          Promise.all([
+            dataService.getAnimais(),
+            dataService.getMensagens(),
+            dataService.getPadrinhos()
+          ]).then(([updatedPets, updatedMsgs, updatedPads]) => {
+            setAnimais(updatedPets);
+            setMensagens(updatedMsgs);
+            setPadrinhos(updatedPads);
+          });
+        }
+      }).catch(err => {
+        console.warn('Processo automático de sync local-Supabase em background ignorado:', err);
+      });
+
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
@@ -58,16 +80,42 @@ export default function Admin() {
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
-    if (email.trim() === 'a@a.pt' && password === '123456') {
-      localStorage.setItem('gruva_admin_logged_in', 'true');
-      setIsLoggedIn(true);
-      fetchDashboardData();
-    } else {
-      setLoginError('Credenciais incorretas. Insira o email a@a.pt e a senha 123456.');
+    try {
+      // 1. Tentar fazer login via Supabase Autenticação (Users)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password,
+      });
+
+      if (!error && data?.user) {
+        localStorage.setItem('gruva_admin_logged_in', 'true');
+        setIsLoggedIn(true);
+        fetchDashboardData();
+        return;
+      }
+
+      // 2. Se falhar ou não existir o utilizador no Supabase Auth, temos o fallback local de testes
+      if (email.trim() === 'a@a.pt' && password === '123456') {
+        localStorage.setItem('gruva_admin_logged_in', 'true');
+        setIsLoggedIn(true);
+        fetchDashboardData();
+      } else {
+        const errMsg = error ? error.message : 'Credenciais inválidas no Supabase Auth.';
+        setLoginError(`Erro: ${errMsg} (Caso precises, podes usar a conta de testes: a@a.pt / 123456).`);
+      }
+    } catch (err: any) {
+      console.error('Supabase authentication error:', err);
+      if (email.trim() === 'a@a.pt' && password === '123456') {
+        localStorage.setItem('gruva_admin_logged_in', 'true');
+        setIsLoggedIn(true);
+        fetchDashboardData();
+      } else {
+        setLoginError('Ligar ao Supabase falhou. Conta teste disponível: a@a.pt / 123456.');
+      }
     }
   };
 
@@ -104,7 +152,7 @@ export default function Admin() {
             <div className="mx-auto bg-white/15 p-4 rounded-full w-16 h-16 flex items-center justify-center mb-4">
               <Lock size={32} className="text-accent-300" />
             </div>
-            <h1 className="text-2xl font-bold font-sans">GRUVA Admin</h1>
+            <h1 className="text-2xl font-bold ">GRUVA Admin</h1>
             <p className="text-primary-100 text-sm mt-1">Insere as tuas credenciais de acesso para gerir os patudos e os contactos.</p>
           </div>
 
@@ -180,7 +228,7 @@ export default function Admin() {
       {/* MOBILE HEADER CONSOLE BAR */}
       <div className="md:hidden bg-[#0a1826] text-white px-6 py-4 flex items-center justify-between border-b border-[#142e47] shrink-0 sticky top-0 z-40">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-extrabold font-mono">G</div>
+          <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-extrabold ">G</div>
           <span className="font-black tracking-tight text-sm text-slate-100">Painel GRUVA</span>
         </div>
         <button
@@ -321,7 +369,7 @@ export default function Admin() {
       <div className="flex-grow min-w-0 flex flex-col md:h-screen md:overflow-y-auto min-h-[calc(100vh-56px)]">
         
         {/* TOP COMPACT STATUS & QUICK REFRESH ROW */}
-        <div className="bg-white border-b border-slate-100 py-3.5 px-4 sm:px-6 lg:px-10 flex items-center justify-between shrink-0 sticky top-0 md:relative z-20 shadow-sm md:shadow-none">
+        <div className="bg-white border-b border-slate-100 py-4 px-4 sm:px-6 lg:px-10 flex items-center justify-between shrink-0 sticky top-0 md:relative z-20 shadow-sm md:shadow-none">
           <div className="flex items-center gap-1.5 text-[10.5px] font-extrabold text-slate-400 tracking-wider">
             <Award size={14} className="text-emerald-500 animate-pulse" />
             <span className="uppercase hidden xs:inline">CONSOLA ADMINISTRATIVA</span>
@@ -330,21 +378,6 @@ export default function Admin() {
             <span className="text-slate-500 uppercase truncate max-w-[120px]">
               {menuItems.find(i => i.id === activeTab)?.label}
             </span>
-          </div>
-
-          <div className="flex items-center gap-3 md:gap-4">
-            <button 
-              onClick={fetchDashboardData}
-              title="Sincronizar base de dados"
-              className="bg-slate-50 hover:bg-slate-100 border border-slate-200 p-2 rounded-xl text-slate-500 hover:text-primary-600 transition-colors"
-            >
-              <RefreshCw size={14} className={loadingData ? 'animate-spin' : ''} />
-            </button>
-            <div className="h-4 w-px bg-slate-200 hidden sm:block"></div>
-            <div className="items-center gap-2 bg-[#f8fafc] px-3.5 py-1.5 rounded-full border border-slate-100 hidden sm:flex font-sans">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
-              <span className="text-[11px] font-bold text-slate-600">Sessão Ativa: a@a.pt</span>
-            </div>
           </div>
         </div>
 

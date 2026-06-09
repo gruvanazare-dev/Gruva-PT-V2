@@ -1,9 +1,53 @@
 import React, { useState } from 'react';
 import { 
   PawPrint, Plus, Edit, Trash2, Heart, Home, Clock, Info, Check, X, Eye, EyeOff, AlertTriangle,
-  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal
+  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Upload, RefreshCw
 } from 'lucide-react';
 import { Animal, dataService } from '../lib/dataService';
+import { supabase } from '../lib/supabase';
+
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          resolve(dataUrl);
+        } else {
+          resolve(event.target?.result as string);
+        }
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 interface AdminPatudosTabProps {
   animais: Animal[];
@@ -26,7 +70,18 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
   // Form Editor State
   const [isEditingPet, setIsEditingPet] = useState(false);
   const [editingPetId, setEditingPetId] = useState<string | null>(null);
-  const [petForm, setPetForm] = useState({
+  const [petForm, setPetForm] = useState<{
+    nome: string;
+    especie: string;
+    raca: string;
+    idade_aprox: string;
+    sexo: string;
+    porte: string;
+    estado: string;
+    foto_url: string;
+    fotos: string[];
+    descricao: string;
+  }>({
     nome: '',
     especie: 'Cão',
     raca: '',
@@ -35,9 +90,107 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
     porte: 'Médio',
     estado: 'Disponível',
     foto_url: '',
+    fotos: [],
     descricao: ''
   });
   const [petFormError, setPetFormError] = useState('');
+  const [uploadingIndexes, setUploadingIndexes] = useState<number[]>([]);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+
+  // Confirmation state for deleting a pet
+  const [petToDelete, setPetToDelete] = useState<{ id: string; nome: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processAndUploadImage(file, index);
+  };
+
+  const processAndUploadImage = async (file: File, index: number) => {
+    setUploadingIndexes(prev => [...prev, index]);
+    setPetFormError('');
+    try {
+      // 1. Compress Image to elegant lightweight Base64 (max 800px width/height, 0.75 quality)
+      const compressedBase64 = await compressImage(file);
+      
+      // We try uploading to Supabase Storage if they have the bucket
+      let uploadedUrl = compressedBase64;
+      try {
+        const fileExt = file.name.split('.').pop() || 'jpg';
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `fotos/${fileName}`;
+
+        // Upload to supabase storage bucket
+        const { data, error } = await supabase.storage
+          .from('fotos-animais')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: true
+          });
+
+        if (!error && data) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('fotos-animais')
+            .getPublicUrl(filePath);
+          
+          if (publicUrl) {
+            uploadedUrl = publicUrl;
+            console.log('Imagem enviada com sucesso para o Supabase Storage:', publicUrl);
+          }
+        } else {
+          console.warn('Upload para o Supabase Storage falhou (talvez bucket "fotos-animais" não exista). A usar Base64 local/remoto comprimido altamente eficiente.');
+        }
+      } catch (storageErr) {
+        console.warn('Erro a tentar usar o Supabase Storage. A reverter de forma segura para Base64:', storageErr);
+      }
+
+      setPetForm(prev => {
+        const newFotos = [...prev.fotos];
+        newFotos[index] = uploadedUrl;
+        return {
+          ...prev,
+          fotos: newFotos,
+          foto_url: index === 0 ? uploadedUrl : (prev.foto_url || uploadedUrl)
+        };
+      });
+      setUploadSuccess(`Fotografia ${index + 1} carregada com sucesso!`);
+      setTimeout(() => setUploadSuccess(null), 3000);
+    } catch (err: any) {
+      console.error(err);
+      setPetFormError('Ocorreu um erro a processar o ficheiro de imagem. Tenta outra imagem.');
+    } finally {
+      setUploadingIndexes(prev => prev.filter(i => i !== index));
+    }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setPetForm(prev => {
+      const newFotos = [...prev.fotos];
+      newFotos.splice(index, 1);
+      return {
+        ...prev,
+        fotos: newFotos,
+        foto_url: newFotos[0] || ''
+      };
+    });
+  };
+
+  const handleApplyPreset = (url: string) => {
+    setPetForm(prev => {
+      const newFotos = [...prev.fotos];
+      if (newFotos.length < 3) {
+        newFotos.push(url);
+      } else {
+        newFotos[0] = url;
+      }
+      return {
+        ...prev,
+        fotos: newFotos,
+        foto_url: newFotos[0] || url
+      };
+    });
+  };
 
   const imagePresets = [
     { name: 'Cão 1 (Golden)', url: 'https://images.unsplash.com/photo-1552053831-71594a27632d?q=80&w=600&auto=format&fit=crop' },
@@ -57,6 +210,7 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
       porte: 'Médio',
       estado: 'Disponível',
       foto_url: '',
+      fotos: [],
       descricao: ''
     });
     setEditingPetId(null);
@@ -74,6 +228,7 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
       porte: pet.porte || 'Médio',
       estado: pet.estado,
       foto_url: pet.foto_url || '',
+      fotos: pet.fotos || (pet.foto_url ? [pet.foto_url] : []),
       descricao: pet.descricao || ''
     });
     setEditingPetId(pet.id);
@@ -90,11 +245,16 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
       return;
     }
 
+    const finalForm = {
+      ...petForm,
+      foto_url: petForm.fotos[0] || petForm.foto_url
+    };
+
     try {
       if (editingPetId) {
-        await dataService.updateAnimal(editingPetId, petForm);
+        await dataService.updateAnimal(editingPetId, finalForm);
       } else {
-        await dataService.addAnimal(petForm);
+        await dataService.addAnimal(finalForm);
       }
       setIsEditingPet(false);
       setEditingPetId(null);
@@ -105,16 +265,7 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
   };
 
   const handleDeletePet = async (id: string, name: string) => {
-    const confirmed = window.confirm(`Tens a certeza que desejas eliminar permanentemente o(a) patudo(a) "${name}" do sistema?`);
-    if (confirmed) {
-      try {
-        await dataService.deleteAnimal(id);
-        onRefresh();
-      } catch (err) {
-        console.error('Erro ao eliminar animal:', err);
-        alert('Erro ao eliminar patudo.');
-      }
-    }
+    setPetToDelete({ id, nome: name });
   };
 
   // Local filter
@@ -184,7 +335,7 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
                   placeholder="Pesquisar por nome ou raça..."
                   value={petSearch}
                   onChange={(e) => setPetSearch(e.target.value)}
-                  className="bg-white text-slate-800 border border-slate-205 text-xs px-4 py-2.5 rounded-full w-full focus:outline-none focus:ring-2 focus:ring-primary-400 font-sans shadow-sm"
+                  className="bg-white text-slate-800 border border-slate-205 text-xs px-4 py-2.5 rounded-full w-full focus:outline-none focus:ring-2 focus:ring-primary-400  shadow-sm"
                 />
                 <button
                   type="button"
@@ -367,7 +518,7 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
                             </div>
                             <div>
                               <h4 className="font-extrabold text-slate-800 text-sm">{pet.nome}</h4>
-                              <p className="text-[10px] text-slate-400 truncate max-w-[150px] font-mono">ID: {pet.id}</p>
+                              <p className="text-[10px] text-slate-400 truncate max-w-[150px] ">ID: {pet.id}</p>
                             </div>
                           </div>
                         </td>
@@ -615,39 +766,98 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
                     <option value="Adotado">Adotado 🎉</option>
                   </select>
                 </div>
+              </div>
 
+              {/* Upload de até 3 Fotografias */}
+              <div className="bg-slate-50/40 border border-slate-100 p-5 rounded-[2rem] space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">URL da Foto</label>
-                  <input
-                    type="text"
-                    value={petForm.foto_url}
-                    onChange={e => setPetForm({ ...petForm, foto_url: e.target.value })}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 px-3.5 py-3 rounded-2xl focus:outline-none"
-                  />
+                  <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wider block">Fotografias do Patudo (Até 3 fotos)</label>
+                  <p className="text-[10px] text-slate-400 mt-0.5">A primeira fotografia será definida como a imagem principal de capa.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[0, 1, 2].map((index) => {
+                    const currentPhoto = petForm.fotos[index];
+                    const isUploading = uploadingIndexes.includes(index);
+                    const isPrincipal = index === 0;
+
+                    return (
+                      <div key={index} className="flex flex-col bg-white border border-slate-100 rounded-3xl p-3 shadow-sm relative group">
+                        <div className="absolute top-4 left-4 z-10 flex items-center gap-1">
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                            isPrincipal 
+                              ? 'bg-emerald-500 text-white' 
+                              : 'bg-slate-500 text-white'
+                          }`}>
+                            {isPrincipal ? 'Principal' : `Foto ${index + 1}`}
+                          </span>
+                        </div>
+
+                        {currentPhoto ? (
+                          <div className="relative aspect-[4/3] w-full bg-slate-50 rounded-2xl overflow-hidden border">
+                            <img 
+                              src={currentPhoto} 
+                              alt={`Foto ${index + 1}`} 
+                              className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" 
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePhoto(index)}
+                                className="bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all"
+                              >
+                                Remover
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="relative aspect-[4/3] w-full">
+                            <input
+                              type="file"
+                              id={`pet-photo-upload-${index}`}
+                              accept="image/*"
+                              onChange={(e) => handleImageFileChange(e, index)}
+                              className="hidden"
+                              disabled={isUploading}
+                            />
+                            <label
+                              htmlFor={`pet-photo-upload-${index}`}
+                              className={`w-full h-full border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all text-center ${
+                                isUploading 
+                                  ? 'bg-slate-50 border-slate-200 cursor-not-allowed animate-pulse'
+                                  : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300'
+                              }`}
+                            >
+                              {isUploading ? (
+                                <div className="flex flex-col items-center gap-1.5 p-2">
+                                  <RefreshCw className="animate-spin text-blue-500" size={18} />
+                                  <span className="text-[9px] font-bold text-slate-500">A processar...</span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center gap-1.5 p-2">
+                                  <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
+                                    <Upload size={14} />
+                                  </div>
+                                  <span className="text-[10px] font-extrabold text-slate-700">Adicionar Foto</span>
+                                  <span className="text-[8px] text-slate-400 font-medium">PNG, JPG ou WEBP</span>
+                                </div>
+                              )}
+                            </label>
+                          </div>
+                        )}
+
+                        {uploadSuccess && uploadSuccess.includes(`${index + 1}`) && (
+                          <span className="text-[8px] text-emerald-600 font-medium text-center mt-1 animate-fade-in">
+                            {uploadSuccess}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Photo presets */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Imagens Predefinidas (Galeria Rápida de Teste)</label>
-                <div className="flex flex-wrap gap-2">
-                  {imagePresets.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setPetForm({ ...petForm, foto_url: preset.url })}
-                      className={`text-[10px] font-bold px-3 py-2 rounded-xl transition-all border ${
-                        petForm.foto_url === preset.url 
-                          ? 'bg-blue-500 text-white border-blue-500 shadow-md' 
-                          : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {preset.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
+
 
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Apresentação / Descrição do Patudo</label>
@@ -713,6 +923,54 @@ export default function AdminPatudosTab({ animais, onRefresh }: AdminPatudosTabP
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Pet Deletion */}
+      {petToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 flex flex-col items-center text-center space-y-4 animate-scale-in">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+              <AlertTriangle size={24} />
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-slate-800">Eliminar Patudo?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Tens a certeza que pretendes eliminar permanentemente o patudo <strong className="text-slate-800">"{petToDelete.nome}"</strong>? Esta ação é irreversível.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 w-full pt-1">
+              <button
+                type="button"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-all"
+                onClick={() => setPetToDelete(null)}
+                disabled={isDeleting}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                disabled={isDeleting}
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await dataService.deleteAnimal(petToDelete.id);
+                    onRefresh();
+                  } catch (err) {
+                    console.error('Erro ao eliminar animal:', err);
+                  } finally {
+                    setIsDeleting(false);
+                    setPetToDelete(null);
+                  }
+                }}
+              >
+                {isDeleting ? 'A eliminar...' : 'Confirmar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
